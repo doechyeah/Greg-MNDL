@@ -1,0 +1,20 @@
+{
+    "operation_size" : {
+        "y" : 0.80,
+        "x" : 0.80,
+        "z" : 0.3,
+        "plants_registered" : 4
+    },
+    "mapping" : {
+        "<sensor_ID1>" : 0,
+        "<sensor_ID2>" : 1,
+        "<sensor_ID3>" : 2,
+        "<sensor_ID4>" : 3
+    },
+    "system_stats" : {
+        "totalTime" : "",
+        "startTime" : "",
+        "plants_serviced" : "",
+        "water_level" : 100
+    }
+}

@@ -1,0 +1,19 @@
+Vref ADJUSTMENT:
+Before start the power, READ the following voltage adjust guide:
+https://e3d-online.dozuki.com/Guide/VREF+adjustment+A4988/92
+
+DRIVER CURRENT LIMIT:
+For the Y_Axis_Driver the max current is 1A.
+For the X_Axis_Driver the max current is 0.5A.
+Please limit the max current less than 1.5A for safety.
+
+
+FOR THE POWER SAFETY !!!
+Please start the program first, then connect the 12V power for the motor!
+And remove the power jack first, then stop the program.
+
+
+INPUT GUIDE:
+The Y-axis motor is start(Motor side) from negative step: eg. -1000 steps.
+the X-axis motor should be same as above. Please reserve threaded space for testing.
+Recommand delay: 0.001 or 0.002
