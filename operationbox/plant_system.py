@@ -18,7 +18,7 @@ class Plant_System:
             json.dump(sys_info, f)
     
     def updateStats(self):
-        self.system_stats["totalTime"] = self.system_stats["totalTime"] + 
+        self.system_stats["totalTime"] = self.system_stats["totalTime"]
         res = {**self.op_info, **self.system_stats, **self.system_stats}
         with open("operationbox/system_info.json") as f:
             json.dump(res, f)
