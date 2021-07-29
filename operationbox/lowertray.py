@@ -1,5 +1,5 @@
 from classes import relay
-from time import sleep]
+from time import sleep
 from uppertray import UpperTray
 
 # Control all systems and hardware in lower tray
