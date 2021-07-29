@@ -1,15 +1,13 @@
 {
-    "operation_size" : {
-        "y" : 0.80,
-        "x" : 0.80,
-        "z" : 0.3,
-        "plants_registered" : 4
+    "UpperTrayGPIO" : {
+        "tray1" : [255, 255],
+        "tray2" : [255, 255],
+        "tray3" : [255, 255]
     },
-    "mapping" : {
-        "<sensor_ID1>" : 0,
-        "<sensor_ID2>" : 1,
-        "<sensor_ID3>" : 2,
-        "<sensor_ID4>" : 3
+    "LowerTray" : {
+        "systemID" : "test",
+        "pumpGPIO" : 255,
+        "waterSens" : 255
     },
     "system_stats" : {
         "totalTime" : "",

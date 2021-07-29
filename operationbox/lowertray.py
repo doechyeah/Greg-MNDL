@@ -18,4 +18,4 @@ class LowerTray:
     
     def check_Water(self):
         ### Check water level of tank
-        ### placeholder
+        print(1)
