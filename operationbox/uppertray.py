@@ -9,9 +9,9 @@ class UpperTray:
 
     def fill_tray(self, time = 50):
         try:
-            if self.deviceID is None:
-                print("System is not registered:\nSKIPPING OPERATION -- PLEASE REGISTER TRAY BEFORE USING")
-                return -1
+            # if self.deviceID is None:
+            #     print("System is not registered:\nSKIPPING OPERATION -- PLEASE REGISTER TRAY BEFORE USING")
+            #     return -1
             self.inflow.on()
             sleep(time)
             self.inflow.off()

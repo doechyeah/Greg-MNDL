@@ -1,4 +1,4 @@
-from logging import raiseExceptions
+# from logging import raiseExceptions
 from flask import Flask, jsonify, request
 import threading, queue, os, time, json
 from celery import Celery
@@ -44,8 +44,11 @@ fill_queue = queue.Queue()
 Service Functions
 """
 @celery.task(bind=True)
-def drainStart(tray, deviceID, time=600):
-    time.sleep(time)
+def drainStart(self, tray, deviceID, time=600):
+    for seg in range(10):
+        time.sleep(time/10)
+        prog = seg*10
+        self.update_state(state='PROGRESS', meta={'Percent': prog, 'Total' : 100})
     res = trays[tray].drain_tray()
     notify = req.put(f'localhost:5000/drainDone/{deviceID}', json={'Task' : True})
 
