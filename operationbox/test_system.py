@@ -1,11 +1,14 @@
-import lowertray, uppertray
+from classes import lowertray, uppertray
 from time import sleep, time
-import threading
+import threading, json
+
+with open('operationbox/system_info.json') as f:
+    sys_info = json.loads(f.read())
 
 class Test_System:
-    def __init__(self, upperGPIO, Lower, fill_t=50, drain_t=200):
+    def __init__(self, upperGPIO=sys_info["UpperTrayGPIO"], Lower=sys_info["LowerTray"], fill_t=50, drain_t=200):
         self.trays = [ uppertray.UpperTray(gpio[0], gpio[1]) for gpio in upperGPIO.items() ]
-        self.lower_tray = lowertray.LowerTray(Lower["systemID"], Lower['pumpGPIO'], Lower['waterSens'])
+        self.lower_tray = lowertray.LowerTray(Lower["systemID"], Lower['pumpGPIO'])
         self.fill_t = fill_t
         self.drain_t = drain_t
 

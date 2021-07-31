@@ -3,8 +3,7 @@ from flask import Flask, jsonify, request
 import threading, queue, os, time, json
 from celery import Celery
 import requests as req
-import uppertray
-import lowertray
+from classes import uppertray, lowertray
 
 """ 
 Start Webservice and Celery worker 
@@ -28,16 +27,14 @@ with open('operationbox/system_info.json') as f:
     sys_info = json.loads(f.read())
 
 systemID = sys_info["LowerTray"]["systemID"]
-# tray1 = uppertray.UpperTray(sys_info["mapping"]["tray1"])
-# tray2 = uppertray.UpperTray(sys_info["mapping"]["tray2"])
-# tray3 = uppertray.UpperTray(sys_info["mapping"]["tray3"])
-# trays = [tray1, tray2, tray3]
 trays = [ uppertray.UpperTray(gpio[0], gpio[1]) for gpio in sys_info["UpperTrayGPIO"].items() ]
 lower_tray = lowertray.LowerTray(systemID, sys_info["LowerTray"]["pumpGPIO"])
 
 # Registry keeps track of which deviceID is assigned to which tray
 # ex. { "<deviceID>" : [ UpperTrayObject, "<Available for job>"]}
 registry = {}
+
+# Queue manages the filling of trays
 fill_queue = queue.Queue()
 
 """
@@ -48,7 +45,8 @@ def drainStart(self, tray, deviceID, time=600):
     for seg in range(10):
         time.sleep(time/10)
         prog = seg*10
-        self.update_state(state='PROGRESS', meta={'Percent': prog, 'Total' : 100})
+        self.update_state(state='PROGRESS', meta={'Percent': prog, 'Task' : 'Watering'})
+    self.update_state(state='PROGRESS', meta={'Percent': prog, 'Task' : 'Draining'})
     res = trays[tray].drain_tray()
     notify = req.put(f'localhost:5000/drainDone/{deviceID}', json={'Task' : True})
 
@@ -165,9 +163,24 @@ def unregister_tray():
         resp = jsonify({'Ack' : True})
     return resp
 
+
 """
 Main Function
 """
+#Synchronize function with web application
+def sync_app(systemID):
+    print("This function does nothing right now")
+    sys_req = jsonify({'systemID': systemID})
+    resp = req.get('<<Sync Function URL>>', json=sys_req)
+    # Update lower tray information
+
+    # Update registry
+
 if __name__ == '__main__':
-    threading.Thread(target=service_Tray, daemon=True).start()
-    app.run(debug=True, host='0.0.0.0')
+    try:
+        threading.Thread(target=service_Tray, daemon=True).start()
+        app.run(debug=True, host='0.0.0.0')
+    except KeyboardInterrupt:
+        print('Ending Operation')
+    finally:
+        print('Cleanup')

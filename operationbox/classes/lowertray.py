@@ -1,6 +1,5 @@
-from classes import relay
+import relay
 from time import sleep
-from uppertray import UpperTray
 
 # Control all systems and hardware in lower tray
 class LowerTray:
@@ -8,6 +7,7 @@ class LowerTray:
         self.mainPump = relay.Relay(pumpGPIO, False)
         # self.waterLevel = ______ (Reader for water level)
         self.systemID = systemID
+        self.water_level = 50
         self.pumpTimer = 0
 
     def mainPump_on(self):

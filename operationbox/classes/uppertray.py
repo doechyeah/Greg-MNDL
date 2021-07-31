@@ -1,4 +1,4 @@
-from classes import relay
+import relay
 from time import sleep
 
 class UpperTray:
