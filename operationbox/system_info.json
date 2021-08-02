@@ -1,12 +1,12 @@
 {
     "UpperTrayGPIO" : {
-        "tray1" : [255, 255],
-        "tray2" : [255, 255],
-        "tray3" : [255, 255]
+        "tray1" : [16, 6],
+        "tray2" : [20, 13],
+        "tray3" : [21, 19]
     },
     "LowerTray" : {
         "systemID" : "test",
-        "pumpGPIO" : 255,
+        "pumpGPIO" : 26,
         "waterSens" : 255
     },
     "system_stats" : {

@@ -1,4 +1,4 @@
-import relay
+from classes import relay
 from time import sleep
 
 # Control all systems and hardware in lower tray
