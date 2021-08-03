@@ -4,6 +4,7 @@ import threading, queue, os, time, json
 from celery import Celery
 import requests as req
 from classes import uppertray, lowertray
+import RPi.GPIO as GPIO
 
 """ 
 Start Webservice and Celery worker 
@@ -20,15 +21,23 @@ celery.conf.update(app.config)
 
 
 """
-System Infromation and managment objectsj
+System Infromation and managment objects
 """
+# Setup GPIO
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
+
 # Load System Information.
-with open('operationbox/system_info.json') as f:
+with open('system_info.json') as f:
     sys_info = json.loads(f.read())
 
 systemID = sys_info["LowerTray"]["systemID"]
-trays = [ uppertray.UpperTray(gpio[0], gpio[1]) for gpio in sys_info["UpperTrayGPIO"].items() ]
+trays = [ uppertray.UpperTray(gpio[0], gpio[1]) for _, gpio in sys_info["UpperTrayGPIO"].items() ]
 lower_tray = lowertray.LowerTray(systemID, sys_info["LowerTray"]["pumpGPIO"])
+wifiLED = sys_info["LowerTray"]["wifiLED"]
+systemLED = sys_info["LowerTray"]["systemLED"]
+GPIO.setup(wifiLED, GPIO.OUT)
+GPIO.setup(systemLED, GPIO.OUT)
 
 # Registry keeps track of which deviceID is assigned to which tray
 # ex. { "<deviceID>" : [ UpperTrayObject, "<Available for job>"]}
@@ -47,7 +56,7 @@ def drainStart(self, tray, deviceID, time=600):
         prog = seg*10
         self.update_state(state='PROGRESS', meta={'Percent': prog, 'Task' : 'Watering'})
     self.update_state(state='PROGRESS', meta={'Percent': prog, 'Task' : 'Draining'})
-    res = trays[tray].drain_tray()
+    res = tray.drain_tray()
     notify = req.put(f'localhost:5000/drainDone/{deviceID}', json={'Task' : True})
 
 # Threaded Queue that services all trays
@@ -56,30 +65,30 @@ def service_Tray():
         # Threaded operation to check if any tray needs to be filled
         devID = fill_queue.get()
         request = {"systemID" : systemID,
-                    "deviceID" : devID, 
+                    "deviceID" : devID,
                     "taskID" : None}
         try:
             lower_tray.mainPump_on()
             utray = registry.get(devID)[0]
-            result = utray[0].fill_tray()
+            result = utray.fill_tray()
             if result == -1:
                 # Error occurred while opening valve
+                print("Error with fill_tray")
                 raise Exception
-            
             # Allow pump to run for 50 seconds to be fill tray
             time.sleep(50)
             lower_tray.mainPump_off()
-            
             # Launch celery task to handle when to drain the tray
-            task = drainStart.apply_async(utray, devID)
+            task = drainStart.delay(utray, devID)
             request['taskID'] = task.id
-        except:
+        except Exception as e:
             print("Error caught during task")
+            print(e.message, e.args)
         finally:
             # Cleanup
             # Ensure pump is turned off
             lower_tray.mainPump_off()
-            request = req.post("<URL for a web application to send taskID>", json=jsonify(request) )
+            #request = req.post("", json=jsonify(request) )
             fill_queue.task_done()
 
 @app.route('/water_plant', methods=['POST'])
@@ -95,6 +104,7 @@ def water_plant():
             registry.get(deviceID)[1] = True
             fill_queue.put(deviceID)
             resp = jsonify({"Ack" : True})
+            GPIO.output(systemLED, GPIO.HIGH)
     except:
         print("Error occurred while trying to add task to queue")
         # Create other exceptions for specific cases
@@ -117,6 +127,9 @@ def drainDone(deviceID):
     else:
         # Notify Device is not in registry
         print(1)
+    inserv = [ x[1] for _, x in regisry.items() ]
+    if True not in inserv:
+        GPIO.output(systemLED, GPIO.LOW)
         
 @app.route('/tray_status/<task_id>', methods=['GET'])
 def tray_status(task_id):
@@ -131,7 +144,7 @@ def tray_status(task_id):
 """
 Registration Functions
 """
-####### MAIN TO-DO ###########
+####### MAIN TO-DO #########
 @app.route('/register_tray', methods=['POST'])
 def register_tray():
     # Place holder function
@@ -168,19 +181,22 @@ def unregister_tray():
 Main Function
 """
 #Synchronize function with web application
+### To-Do ###
 def sync_app(systemID):
     print("This function does nothing right now")
     sys_req = jsonify({'systemID': systemID})
     resp = req.get('<<Sync Function URL>>', json=sys_req)
     # Update lower tray information
-
     # Update registry
 
 if __name__ == '__main__':
     try:
+        GPIO.output(wifiLED, GPIO.HIGH)
         threading.Thread(target=service_Tray, daemon=True).start()
         app.run(debug=True, host='0.0.0.0')
     except KeyboardInterrupt:
         print('Ending Operation')
     finally:
         print('Cleanup')
+        GPIO.output(wifiLED, GPIO.LOW)
+        GPIO.output(systemLED, GPIO.LOW)

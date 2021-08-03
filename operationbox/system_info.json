@@ -7,7 +7,9 @@
     "LowerTray" : {
         "systemID" : "test",
         "pumpGPIO" : 26,
-        "waterSens" : 255
+        "waterSens" : 255,
+	"wifiLED": 15,
+	"systemLED": 14
     },
     "system_stats" : {
         "totalTime" : "",

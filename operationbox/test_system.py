@@ -1,6 +1,7 @@
 from classes import lowertray, uppertray
 from time import sleep, time
 import threading, json
+import RPi.GPIO as GPIO
 
 with open('system_info.json') as f:
     sys_info = json.loads(f.read())
@@ -11,9 +12,16 @@ class Test_System:
         self.lower_tray = lowertray.LowerTray(Lower["systemID"], int(Lower['pumpGPIO']))
         self.fill_t = fill_t
         self.drain_t = drain_t
+        GPIO.setmode(GPIO.BCM)
+        self.wifiLED = Lower["wifiLED"]
+        self.systemLED = Lower["systemLED"]
+        GPIO.setup(self.wifiLED, GPIO.OUT)
+        GPIO.setup(self.systemLED, GPIO.OUT)
+        GPIO.output(self.wifiLED, GPIO.HIGH)
 
     def test_single(self, position):
         try:
+            GPIO.output(self.systemLED, GPIO.HIGH)
             self.lower_tray.mainPump_on()
             self.trays[position].fill_tray(time=self.fill_t)
             self.lower_tray.mainPump_off()
@@ -23,9 +31,11 @@ class Test_System:
             print("ERROR OCCURRED DURING TASK")
         finally:
             self.lower_tray.mainPump_off()
+            GPIO.output(self.systemLED, GPIO.LOW)
     
     def test_all(self):
         try:
+            GPIO.output(self.systemLED, GPIO.HIGH)
             self.lower_tray.mainPump_on()
             fill_threads = list()
             for tray in self.trays:
@@ -47,3 +57,4 @@ class Test_System:
             print("ERROR OCCURRED DURING TASK")
         finally:
             self.lower_tray.mainPump_off()
+            GPIO.output(self.systemLED, GPIO.LOW)

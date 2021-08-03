@@ -5,7 +5,7 @@ class UpperTray:
     def __init__(self, inGPIO, outGPIO):
         self.inflow = relay.Relay(inGPIO, False)
         self.outflow = relay.Relay(outGPIO,False)
-        # self.deviceID = None
+        self.deviceID = None
 
     def fill_tray(self, time = 50):
         try:
@@ -28,12 +28,12 @@ class UpperTray:
         sleep(time)
         self.outflow.off()
 
-    # def register_tray(self, deviceID):
-    #     self.deviceID = deviceID
+    def register_tray(self, deviceID):
+        self.deviceID = deviceID
     
-    # def unregister_tray(self):
-    #     self.deviceID = None
+    def unregister_tray(self):
+        self.deviceID = None
 
-    # def get_deviceID(self):
-    #     return self.deviceID
+    def get_deviceID(self):
+        return self.deviceID
 
