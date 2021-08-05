@@ -11,10 +11,8 @@
 	"wifiLED": 15,
 	"systemLED": 14
     },
-    "system_stats" : {
-        "totalTime" : "",
-        "startTime" : "",
-        "plants_serviced" : "",
-        "water_level" : 100
+    "system_INFO" : {
+        "gatewayIP" : "",
+        "staticIP" : ""
     }
 }
