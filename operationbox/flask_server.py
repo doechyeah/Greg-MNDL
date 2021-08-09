@@ -33,15 +33,15 @@ GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
 # Load System Information.
-with open('system_info.json') as f:
+with open('/home/pi/Greg-MNDL/operationbox/system_info.json') as f:
     sys_info = json.loads(f.read())
 
 systemID = sys_info["LowerTray"]["systemID"]
 trays = [ uppertray.UpperTray(gpio[0], gpio[1]) for _, gpio in sys_info["UpperTrayGPIO"].items() ]
 lower_tray = lowertray.LowerTray(systemID, sys_info["LowerTray"]["pumpGPIO"])
-wifiLED = sys_info["LowerTray"]["wifiLED"]
+#wifiLED = sys_info["LowerTray"]["wifiLED"]
 systemLED = sys_info["LowerTray"]["systemLED"]
-GPIO.setup(wifiLED, GPIO.OUT)
+#GPIO.setup(wifiLED, GPIO.OUT)
 GPIO.setup(systemLED, GPIO.OUT)
 
 # Registry keeps track of which deviceID is assigned to which tray
@@ -216,10 +216,9 @@ def sync_app(systemID):
     # Update lower tray information
     # Update registry
 
-if __name__ == '__main__':
+def main():
     signal.signal(signal.SIGINT, quit_Greg)
     try:
-        GPIO.output(wifiLED, GPIO.HIGH)
         threading.Thread(target=service_Tray, daemon=True).start()
         app.run(debug=True, host='0.0.0.0')
     except KeyboardInterrupt:
@@ -227,6 +226,7 @@ if __name__ == '__main__':
         quit_Greg()
     finally:
         print('Cleanup')
-        GPIO.output(wifiLED, GPIO.LOW)
         GPIO.output(systemLED, GPIO.LOW)
 
+if __name__ == '__main__':
+    main()

@@ -1,18 +1,1 @@
-{
-    "UpperTrayGPIO" : {
-        "tray1" : [16, 6],
-        "tray2" : [20, 13],
-        "tray3" : [21, 19]
-    },
-    "LowerTray" : {
-        "systemID" : "test",
-        "pumpGPIO" : 26,
-        "waterSens" : 255,
-	"wifiLED": 15,
-	"systemLED": 14
-    },
-    "system_INFO" : {
-        "gatewayIP" : "",
-        "staticIP" : ""
-    }
-}
+{"UpperTrayGPIO": {"tray1": [16, 6], "tray2": [20, 13], "tray3": [21, 19]}, "LowerTray": {"systemID": "test", "pumpGPIO": 26, "waterSens": 255, "wifiLED": 15, "systemLED": 14}, "system_INFO": {"gatewayIP": "192.168.0.1", "staticIP": "192.168.0.200"}}
