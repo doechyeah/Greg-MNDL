@@ -7,14 +7,11 @@ from classes import uppertray, lowertray
 import RPi.GPIO as GPIO
 from redis import Redis
 from rq import Queue
-
+from redis_init import conn
 
 """
 Start Webservice and Celery worker 
 """
-redis_conn = Redis()
-fill_queue = Queue('fill', connection=redis_conn)
-
 app = Flask(__name__)
 app.config['CELERY_BROKER_URL'] = 'redis://localhost:6379/0'
 app.config['CELERY_RESULT_BACKEND'] = 'redis://localhost:6379/0'
@@ -24,6 +21,8 @@ celery.conf.update(app.config)
 # start celery work with and redis
 # $ redis-server
 # $ celery -A <Application Name>.celery worker -l info
+
+fill_queue = Queue(connection=conn)
 
 # Cleanup Signal
 def quit_Greg(*args):
@@ -128,13 +127,13 @@ def sched_water(deviceID):
         raise Exception
     #fill_queue.put(deviceID)
     print('break1')
-    fill_queue.enqueue(service_Tray, deviceID)
+    fill_queue.enqueue_call(func=service_Tray, args=(deviceID,))
     registry.get(deviceID)[1] = True
     print(f"Size of Fill Queue: {fill_queue.qsize()}")
     GPIO.output(systemLED, GPIO.HIGH)
     #except Exception as err:
     print("Error occurred while trying to add task to queue")
-    print(err.message, err.args)
+    # print(err.message, err.args)
     GPIO.output(systemLED, GPIO.LOW)
     # Create other exceptions for specific cases
 
