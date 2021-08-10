@@ -5,8 +5,9 @@ from celery import Celery
 import requests as req
 from classes import uppertray, lowertray
 import RPi.GPIO as GPIO
-import sherlock
-from sherlock import Lock
+#import sherlock
+#from sherlock import Lock
+import redis
 
 """
 Start Webservice and Celery worker 
@@ -21,11 +22,11 @@ celery.conf.update(app.config)
 # $ redis-server
 # $ celery -A <Application Name>.celery worker -l info
 
-sherlock.configure(backend=sherlock.backends.REDIS,
-                   expire=None,
-                   retry_interval=0.1)
+#sherlock.configure(backend=sherlock.backends.REDIS,
+#                   expire=None,
+#                   retry_interval=0.1)
 
-pumpLock = Lock('mainPump')
+#pumpLock = Lock('mainPump')
 
 # Cleanup Signal
 def quit_Greg(*args):
@@ -63,44 +64,29 @@ Service Functions
 """
 @celery.task(bind=True)
 def servceTray(self, deviceID, position, soak_t=6):
-    # request = {"systemID" : systemID,
-    #             "deviceID" : deviceID,
-    #             "taskID" : None,
-    #             "status" : True}
-    try:
-        pumpLock.acquire()
+    print(f"-----RECEIVED JOB FOR TRAY {position}-----")
+    utray = trays[position]
+    with redis.Redis().lock('mainPump'):
         lower_tray.mainPump_on()
-        utray = trays[position]
-        print(f"Filling Upper Tray: {position}")
-
+        print(f"Filling Upper Tray")
         utray.fill_tray(time=10)
         # Allow pump to run for 50 seconds to be fill tray
         lower_tray.mainPump_off()
-        pumpLock.release()
-        print(f"Letting Upper Tray {position} soak and drain (Launching celery task)")
-        # Launch celery task to handle when to drain the tray
-        # task = drainStart.delay(position, deviceID)
-        # request["taskID"] = str(task)
-        for seg in range(10):
-            time.sleep(soak_t/10)
-            prog = seg*10
-            print(f"Progress of tray {position}: {prog}")
-            self.update_state(state='PROGRESS', meta={'Percent': prog, 'Task' : 'Watering'})
-        self.update_state(state='PROGRESS', meta={'Percent': prog, 'Task' : 'Draining'})
-        print(f"Activating Pump {position} for draining")
-        utray.drain_tray(time=5)
-        notify = req.put(f'http://localhost:5000/drainDone/{deviceID}', json={'Task' : True})
-    except Exception as e:
-        print("Error caught during task")
-        print(e.message, e.args)
-    finally:
-        pass
-        # Cleanup
-        # Ensure pump is turned off
-        # lower_tray.mainPump_off()
-        # print(json.dumps(request))
-        # with app.app_context():
-        #         tresp = req.put("https://192.168.1.75:3000/tray/receive_taskID", verify=False , json=request )
+    print(f"Letting Upper Tray {position} soak and drain after {soak_t}")
+    # Launch celery task to handle when to drain the tray
+    for seg in range(10):
+        time.sleep(soak_t/10)
+        prog = seg*10
+        self.update_state(state='PROGRESS', meta={'Percent': prog, 'Task' : 'Watering'})
+    self.update_state(state='PROGRESS', meta={'Percent': prog, 'Task' : 'Draining'})
+    print(f"Activating Pump {position} for draining")
+    utray.drain_tray(time=5)
+    req.put(f'http://localhost:5000/drainDone/{deviceID}', json={'Task' : True}, timeout=10)
+    #except Exception as e:
+    #    print("Error caught during task")
+    #    print(e.message, e.args)
+    #finally:
+    #    pass
 
 @app.route('/water_plant', methods=['POST'])
 def water_plant():
@@ -108,38 +94,23 @@ def water_plant():
     if request.method == 'POST':
         tray_req = request.get_json()
         deviceID = tray_req["deviceID"]
+        position = registry[deviceID][0]
         try:
             # check taskid if tray is already in service RETURN ERR
             if deviceID not in registry.keys() or registry[deviceID][1]:
                 raise Exception
             #fill_queue.put(deviceID)
-            task = servceTray(deviceID,registry[deviceID][0])
+            task = servceTray.delay(deviceID, position)
             # fill_queue.enqueue_call(func=service_Tray, args=(deviceID,))
             registry.get(deviceID)[1] = True
             GPIO.output(systemLED, GPIO.HIGH)
-            resp = jsonify({"Ack" : True})
+            resp = jsonify({"Ack" : True, "taskID" : task.id})
         except Exception as err:
-            print("Error occurred while trying to add task to queue")
+            print(f"Error occurred while trying to add task for tray {registry[deviceID][0]} to queue")
             # print(err.message, err.args)
             GPIO.output(systemLED, GPIO.LOW)
             # Create other exceptions for specific cases
     return resp
-
-# def sched_water(deviceID):
-#     try:
-#         # check taskid if tray is already in service RETURN ERR
-#         if deviceID not in registry.keys() or registry[deviceID][1]:
-#             raise Exception
-#         #fill_queue.put(deviceID)
-#         print('break1')
-#         # fill_queue.enqueue_call(func=service_Tray, args=(deviceID,))
-#         registry.get(deviceID)[1] = True
-#         GPIO.output(systemLED, GPIO.HIGH)
-#     except Exception as err:
-#         print("Error occurred while trying to add task to queue")
-#         # print(err.message, err.args)
-#         GPIO.output(systemLED, GPIO.LOW)
-#         # Create other exceptions for specific cases
 
 """
 Status Functions
@@ -154,7 +125,7 @@ def index():
 def drainDone(deviceID):
     resp = jsonify({'Ack' : True})
     print(f"Notify Server task is done for: {deviceID}")
-    request = { "systemID" : systemID,
+    requ = { "systemID" : systemID,
             "deviceID": deviceID,
             "status" : False
             }
@@ -164,8 +135,7 @@ def drainDone(deviceID):
         # Notify Device is not in registry
         print(1)
     with app.app_context():
-        tresp = req.put("https://192.168.1.75:3000/tray/receive_taskID", verify=False , json=request )
-    print(tresp)
+        req.put("https://192.168.1.75:3000/tray/receive_taskID", verify=False , json=requ, timeout=10)
     inserv = [ x[1] for _, x in registry.items() ]
     if True not in inserv:
         GPIO.output(systemLED, GPIO.LOW)
