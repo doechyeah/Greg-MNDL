@@ -1,20 +1,18 @@
 # from logging import raiseExceptions
 from flask import Flask, jsonify, request
 import threading, os, time, json, signal #, queue
-from celery import Celery
 import requests as req
-from classes import uppertray, lowertray
 import RPi.GPIO as GPIO
-from redis import Redis
-from rq import Queue
+import system_main as sm
+from celery import Celery
 
+# Setup GPIO
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
 
 """
 Start Webservice and Celery worker 
 """
-redis_conn = Redis()
-fill_queue = Queue('fill', connection=redis_conn)
-
 app = Flask(__name__)
 app.config['CELERY_BROKER_URL'] = 'redis://localhost:6379/0'
 app.config['CELERY_RESULT_BACKEND'] = 'redis://localhost:6379/0'
@@ -24,37 +22,15 @@ celery.conf.update(app.config)
 # start celery work with and redis
 # $ redis-server
 # $ celery -A <Application Name>.celery worker -l info
+GPIO.setup(sm.systemLED, GPIO.OUT)
+
+registry = dict()
 
 # Cleanup Signal
 def quit_Greg(*args):
     print('Stopping Greg System')
     # Turn off LED here
     exit(0)
-
-"""
-System Infromation and managment objects
-"""
-# Setup GPIO
-GPIO.setmode(GPIO.BCM)
-GPIO.setwarnings(False)
-
-# Load System Information.
-with open('/home/pi/Greg-MNDL/operationbox/system_info.json') as f:
-    sys_info = json.loads(f.read())
-
-systemID = sys_info["LowerTray"]["systemID"]
-trays = [ uppertray.UpperTray(gpio[0], gpio[1]) for _, gpio in sys_info["UpperTrayGPIO"].items() ]
-lower_tray = lowertray.LowerTray(systemID, sys_info["LowerTray"]["pumpGPIO"])
-systemLED = sys_info["LowerTray"]["systemLED"]
-GPIO.setup(systemLED, GPIO.OUT)
-
-# Registry keeps track of which deviceID is assigned to which tray
-# ex. { "<deviceID>" : [ UpperTrayObject, "<Available for job>"]}
-registry = dict()
-
-# Queue manages the filling of trays
-#fill_queue = queue.Queue()
-
 
 """
 Service Functions
@@ -68,48 +44,26 @@ def drainStart(self, tray, deviceID, soak_t=6):
         self.update_state(state='PROGRESS', meta={'Percent': prog, 'Task' : 'Watering'})
     self.update_state(state='PROGRESS', meta={'Percent': prog, 'Task' : 'Draining'})
     print(f"Activating Pump {tray} for draining")
-    res = trays[tray].drain_tray(time=5)
+    res = sm.trays[tray].drain_tray(time=5)
     notify = req.put(f'http://localhost:5000/drainDone/{deviceID}', json={'Task' : True})
     print(notify)
 
-# Threaded Queue that services all trays
-def service_Tray(devID):
-    if True:
-        # Threaded operation to check if any tray needs to be filled
-        #print(devQ.qsize())
-        #devID = devQ.get()
-        request = {"systemID" : systemID,
-                    "deviceID" : devID,
-                    "taskID" : None,
-		    "status" : True}
-        try:
-            lower_tray.mainPump_on()
-            position = registry.get(devID)[0]
-            utray = trays[position]
-            print(f"Filling Upper Tray: {position+1}")
-            result = utray.fill_tray(time=30)
-            if result == -1:
-                # Error occurred while opening valve
-                print("Error with fill_tray")
-                raise Exception
-            # Allow pump to run for 50 seconds to be fill tray
-            lower_tray.mainPump_off()
-            print(f"Letting Upper Tray {position+1} soak and drain (Launching celery task)")
-            # Launch celery task to handle when to drain the tray
-            task = drainStart.delay(position, devID)
-            request["taskID"] = str(task)
-        except Exception as e:
-            print("Error caught during task")
-            print(e.message, e.args)
-        finally:
-            # Cleanup
-            # Ensure pump is turned off
-            lower_tray.mainPump_off()
-            print(json.dumps(request))
-            with app.app_context():
-                 tresp = req.put("https://192.168.1.75:3000/tray/receive_taskID", verify=False , json=request )
-            #print(devQ.qsize())
-            #devQ.task_done()
+@app.route('/startdrain', methods=['PUT'])
+def start_drain():
+    resp = jsonify({"Ack" : False})
+    if request.method == 'PUT':
+        tray_req = request.get_json()
+        position = tray_req["position"]
+        devID = tray_req["deviceID"]
+        task = drainStart.delay(position, devID)
+        requ = {"systemID" : sm.systemID,
+                "deviceID" : devID,
+                "taskID" : task.id,
+		        "status" : True}
+        resp = jsonify({"Ack" : True})
+    with app.app_context():
+        tresp = req.put("https://192.168.1.75:3000/tray/receive_taskID", verify=False , json=requ )
+    return resp
 
 @app.route('/water_plant', methods=['POST'])
 def water_plant():
@@ -128,14 +82,14 @@ def sched_water(deviceID):
         raise Exception
     #fill_queue.put(deviceID)
     print('break1')
-    fill_queue.enqueue(service_Tray, deviceID)
+    sm.fill_queue.enqueue(sm.service_Tray, deviceID)
     registry.get(deviceID)[1] = True
-    print(f"Size of Fill Queue: {fill_queue.qsize()}")
-    GPIO.output(systemLED, GPIO.HIGH)
+    # print(f"Size of Fill Queue: {fill_queue.qsize()}")
+    GPIO.output(sm.systemLED, GPIO.HIGH)
     #except Exception as err:
     print("Error occurred while trying to add task to queue")
-    print(err.message, err.args)
-    GPIO.output(systemLED, GPIO.LOW)
+    # print(err.message, err.args)
+    GPIO.output(sm.systemLED, GPIO.LOW)
     # Create other exceptions for specific cases
 
 """
@@ -143,7 +97,7 @@ Status Functions
 """
 @app.route('/')
 def index():
-    resp = {**sys_info, **registry}
+    resp = {**sm.sys_info, **registry}
     return str(resp)
     # return 'Plant Queue: ' + str(plant_queue)
 
@@ -151,7 +105,7 @@ def index():
 def drainDone(deviceID):
     resp = jsonify({'Ack' : True})
     print(f"Notify Server task is done for: {deviceID}")
-    request = { "systemID" : systemID,
+    request = { "systemID" : sm.systemID,
             "deviceID": deviceID,
             "status" : False
             }
@@ -165,12 +119,12 @@ def drainDone(deviceID):
     print(tresp)
     inserv = [ x[1] for _, x in registry.items() ]
     if True not in inserv:
-        GPIO.output(systemLED, GPIO.LOW)
+        GPIO.output(sm.systemLED, GPIO.LOW)
     return resp
 
 @app.route('/tray_status/<task_id>', methods=['GET'])
 def tray_status(task_id):
-    task = drainStart.AsyncResult(task_id)
+    task = sm.drainStart.AsyncResult(task_id)
     resp = {"Ack" : False, "task_status" : task}
     ### TO-DO ###
     return resp
@@ -191,7 +145,7 @@ def register_tray():
             ### TO-DO ###
             return resp
         registry[deviceID] = [tray['position'], False]
-        trays[tray['position']].register_tray(deviceID)
+        sm.trays[tray['position']].register_tray(deviceID)
         resp = jsonify({'Ack': True})
     return resp
 
@@ -211,7 +165,7 @@ def unregister_tray():
             return resp
         position = registry[deviceID][0]
         registry.pop(deviceID)
-        trays[position].unregister_tray()
+        sm.trays[position].unregister_tray()
         resp = jsonify({'Ack' : True})
     return resp
 
@@ -221,12 +175,12 @@ Main Function
 """
 #Synchronize function with web application
 ### To-Do ###
-def sync_app(systemID):
-    print("This function does nothing right now")
-    sys_req = jsonify({'systemID': systemID})
-    resp = req.get('<<Sync Function URL>>', json=sys_req)
-    # Update lower tray information
-    # Update registry
+# def sync_app(systemID):
+#     print("This function does nothing right now")
+#     sys_req = jsonify({'systemID': systemID})
+#     resp = req.get('<<Sync Function URL>>', json=sys_req)
+#     # Update lower tray information
+#     # Update registry
 
 def main():
     signal.signal(signal.SIGINT, quit_Greg)
@@ -238,7 +192,7 @@ def main():
         quit_Greg()
     finally:
         print('Cleanup')
-        GPIO.output(systemLED, GPIO.LOW)
+        GPIO.output(sm.systemLED, GPIO.LOW)
 
 if __name__ == '__main__':
     main()

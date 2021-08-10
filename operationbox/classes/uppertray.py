@@ -6,6 +6,7 @@ class UpperTray:
         self.inflow = relay.Relay(inGPIO, False)
         self.outflow = relay.Relay(outGPIO,False)
         self.deviceID = None
+        self.timeINT = 60 #Default Time inteveral is 1 Hour
 
     def fill_tray(self, time = 50):
         try:
