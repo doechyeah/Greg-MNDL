@@ -1,14 +1,20 @@
 # from logging import raiseExceptions
 from flask import Flask, jsonify, request
-import threading, queue, os, time, json, signal
+import threading, os, time, json, signal #, queue
 from celery import Celery
 import requests as req
 from classes import uppertray, lowertray
 import RPi.GPIO as GPIO
+from redis import Redis
+from rq import Queue
 
-""" 
+
+"""
 Start Webservice and Celery worker 
 """
+redis_conn = Redis()
+fill_queue = Queue('fill', connection=redis_conn)
+
 app = Flask(__name__)
 app.config['CELERY_BROKER_URL'] = 'redis://localhost:6379/0'
 app.config['CELERY_RESULT_BACKEND'] = 'redis://localhost:6379/0'
@@ -39,9 +45,7 @@ with open('/home/pi/Greg-MNDL/operationbox/system_info.json') as f:
 systemID = sys_info["LowerTray"]["systemID"]
 trays = [ uppertray.UpperTray(gpio[0], gpio[1]) for _, gpio in sys_info["UpperTrayGPIO"].items() ]
 lower_tray = lowertray.LowerTray(systemID, sys_info["LowerTray"]["pumpGPIO"])
-#wifiLED = sys_info["LowerTray"]["wifiLED"]
 systemLED = sys_info["LowerTray"]["systemLED"]
-#GPIO.setup(wifiLED, GPIO.OUT)
 GPIO.setup(systemLED, GPIO.OUT)
 
 # Registry keeps track of which deviceID is assigned to which tray
@@ -49,13 +53,14 @@ GPIO.setup(systemLED, GPIO.OUT)
 registry = dict()
 
 # Queue manages the filling of trays
-fill_queue = queue.Queue()
+#fill_queue = queue.Queue()
+
 
 """
 Service Functions
 """
 @celery.task(bind=True)
-def drainStart(self, tray, deviceID, soak_t=60):
+def drainStart(self, tray, deviceID, soak_t=6):
     for seg in range(10):
         time.sleep(soak_t/10)
         prog = seg*10
@@ -68,19 +73,21 @@ def drainStart(self, tray, deviceID, soak_t=60):
     print(notify)
 
 # Threaded Queue that services all trays
-def service_Tray():
-    while True:
+def service_Tray(devID):
+    if True:
         # Threaded operation to check if any tray needs to be filled
-        devID = fill_queue.get()
+        #print(devQ.qsize())
+        #devID = devQ.get()
         request = {"systemID" : systemID,
                     "deviceID" : devID,
-                    "taskID" : None}
+                    "taskID" : None,
+		    "status" : True}
         try:
             lower_tray.mainPump_on()
             position = registry.get(devID)[0]
             utray = trays[position]
             print(f"Filling Upper Tray: {position+1}")
-            result = utray.fill_tray(time=5)
+            result = utray.fill_tray(time=30)
             if result == -1:
                 # Error occurred while opening valve
                 print("Error with fill_tray")
@@ -101,38 +108,35 @@ def service_Tray():
             print(json.dumps(request))
             with app.app_context():
                  tresp = req.put("https://192.168.1.75:3000/tray/receive_taskID", verify=False , json=request )
-            print(tresp)
-            fill_queue.task_done()
+            #print(devQ.qsize())
+            #devQ.task_done()
 
 @app.route('/water_plant', methods=['POST'])
 def water_plant():
     resp = jsonify({"Ack" : False})
-    try:
-        if request.method == 'POST':
-            tray_req = request.get_json()
-            deviceID = tray_req["deviceID"]
-            sched_water(deviceID)
-            resp = jsonify({"Ack" : True})
-    except Exception as err:
-        print("Error occurred while trying to add task to queue")
-        print(err.message, err.args)
-        # Create other exceptions for specific cases
-    finally:
-        return resp
+    if request.method == 'POST':
+        tray_req = request.get_json()
+        deviceID = tray_req["deviceID"]
+        sched_water(deviceID)
+        resp = jsonify({"Ack" : True})
+    return resp
 
 def sched_water(deviceID):
-    try:
-        # check taskid if tray is already in service RETURN ERR
-        if deviceID not in registry.keys() or registry[deviceID][1]:
-            raise Exception
-        registry.get(deviceID)[1] = True
-        fill_queue.put(deviceID)
-        GPIO.output(systemLED, GPIO.HIGH)
-    except Exception as err:
-        print("Error occurred while trying to add task to queue")
-        print(err.message, err.args)
-        GPIO.output(systemLED, GPIO.LOW)
-        # Create other exceptions for specific cases
+    #try:
+    # check taskid if tray is already in service RETURN ERR
+    if deviceID not in registry.keys() or registry[deviceID][1]:
+        raise Exception
+    #fill_queue.put(deviceID)
+    print('break1')
+    fill_queue.enqueue(service_Tray, deviceID)
+    registry.get(deviceID)[1] = True
+    print(f"Size of Fill Queue: {fill_queue.qsize()}")
+    GPIO.output(systemLED, GPIO.HIGH)
+    #except Exception as err:
+    print("Error occurred while trying to add task to queue")
+    print(err.message, err.args)
+    GPIO.output(systemLED, GPIO.LOW)
+    # Create other exceptions for specific cases
 
 """
 Status Functions
@@ -140,22 +144,30 @@ Status Functions
 @app.route('/')
 def index():
     resp = {**sys_info, **registry}
-    return resp
+    return str(resp)
     # return 'Plant Queue: ' + str(plant_queue)
 
 @app.route('/drainDone/<deviceID>', methods=['PUT'])
 def drainDone(deviceID):
-    resp = jsonify({'Ack':True})
+    resp = jsonify({'Ack' : True})
+    print(f"Notify Server task is done for: {deviceID}")
+    request = { "systemID" : systemID,
+            "deviceID": deviceID,
+            "status" : False
+            }
     if deviceID in registry.keys():
         registry[deviceID][1] = False
     else:
         # Notify Device is not in registry
         print(1)
+    with app.app_context():
+        tresp = req.put("https://192.168.1.75:3000/tray/receive_taskID", verify=False , json=request )
+    print(tresp)
     inserv = [ x[1] for _, x in registry.items() ]
     if True not in inserv:
         GPIO.output(systemLED, GPIO.LOW)
     return resp
-        
+
 @app.route('/tray_status/<task_id>', methods=['GET'])
 def tray_status(task_id):
     task = drainStart.AsyncResult(task_id)
@@ -219,7 +231,7 @@ def sync_app(systemID):
 def main():
     signal.signal(signal.SIGINT, quit_Greg)
     try:
-        threading.Thread(target=service_Tray, daemon=True).start()
+        #threading.Thread(target=service_Tray,args=(fill_queue,), daemon=True).start()
         app.run(debug=True, host='0.0.0.0')
     except KeyboardInterrupt:
         print("Shutting Down")
