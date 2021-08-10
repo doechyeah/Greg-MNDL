@@ -62,7 +62,7 @@ def start_drain():
 		        "status" : True}
         resp = jsonify({"Ack" : True})
     with app.app_context():
-        tresp = req.put("https://192.168.1.75:3000/tray/receive_taskID", verify=False , json=requ )
+        req.put("https://192.168.1.75:3000/tray/receive_taskID", verify=False , json=requ )
     return resp
 
 @app.route('/water_plant', methods=['POST'])
@@ -82,7 +82,8 @@ def sched_water(deviceID):
         raise Exception
     #fill_queue.put(deviceID)
     print('break1')
-    sm.fill_queue.enqueue(sm.service_Tray, deviceID)
+    position = registry[deviceID][0]
+    sm.fill_queue.enqueue(sm.service_Tray, args=(deviceID,position,))
     registry.get(deviceID)[1] = True
     # print(f"Size of Fill Queue: {fill_queue.qsize()}")
     GPIO.output(sm.systemLED, GPIO.HIGH)
